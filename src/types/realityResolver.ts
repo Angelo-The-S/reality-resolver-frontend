@@ -10,6 +10,34 @@ export type ScenarioId = "confirmed" | "cancelled" | "voicemail" | "blocked";
 /** Demo-only selector values, including the "no call needed" branch. */
 export type DemoScenarioId = ScenarioId | "no-call-needed";
 
+export type ExecutionMode = "fake" | "live";
+
+export type CustomEvidenceType = "structured" | "human" | "absence";
+export type CustomAmbiguity = "low" | "medium" | "high";
+
+export interface CustomEvidenceInput {
+  source: string;
+  type: CustomEvidenceType;
+  freshness_hours: number;
+  claim: string;
+  ambiguity: CustomAmbiguity;
+}
+
+export interface CustomCaseInput {
+  name: string;
+  use_case: "appointment_confirmation" | "critical_service_escalation" | "factual_state_confirmation";
+  deadline: string;
+  decision_deadline_threshold_hours: number;
+  decision_options: {
+    if_confirmed: string;
+    if_cancelled: string;
+  };
+  call_task_hint: string;
+  evidence: CustomEvidenceInput[];
+  call_phone?: string;
+  industry?: string;
+}
+
 export interface CaseInfo {
   id?: string;
   name: string;

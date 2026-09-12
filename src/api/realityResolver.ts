@@ -4,11 +4,12 @@ import {
   type CaseInfo,
   type CaseSummary,
   type DemoScenarioId,
+  type CustomCaseInput,
+  type ExecutionMode,
   type HealthResponse,
   type RawResolution,
   type RawCaseCatalogResponse,
   type Resolution,
-  type ResolveRequest,
   type WireScenarioId,
 } from "@/types/realityResolver";
 import {
@@ -95,26 +96,46 @@ function normalize(raw: RawResolution): Resolution {
 
 export async function resolveCase(
   scenario: DemoScenarioId,
-  options?: { case?: CaseId; nowUtc?: string },
+  options?: {
+    case?: CaseId;
+    nowUtc?: string;
+    customCase?: CustomCaseInput;
+    executionMode?: ExecutionMode;
+    destination?: string;
+    authorizeDestination?: string;
+    gdprBasisDocumented?: boolean;
+    apiKey?: string;
+  },
 ): Promise<Resolution> {
-  if (USE_MOCK) return mockResolve(scenario, options?.case);
+  const executionMode = options?.executionMode ?? "fake";
+  const useBackend = Boolean(options?.customCase) || executionMode === "live" || !USE_MOCK;
+  if (!useBackend) return mockResolve(scenario, options?.case);
 
-  const body: ResolveRequest = {
-    case: options?.case ?? "critical-service-escalation",
-    execution_mode: "fake",
-    scenario: toWireScenario(scenario),
+  const body: Record<string, unknown> = {
+    case: options?.customCase ? "custom" : (options?.case ?? "critical-service-escalation"),
+    execution_mode: executionMode,
+    ...(executionMode === "fake" ? { scenario: toWireScenario(scenario) } : {}),
     ...(options?.nowUtc ? { now_utc: options.nowUtc } : {}),
+    ...(options?.customCase ? { custom_case: options.customCase } : {}),
+    ...(executionMode === "live"
+      ? {
+          destination: options?.destination,
+          authorize_destination: options?.authorizeDestination,
+          gdpr_basis_documented: options?.gdprBasisDocumented === true,
+        }
+      : {}),
   };
 
   const raw = await request<RawResolution>("/api/resolutions", {
     method: "POST",
     body: JSON.stringify(body),
+    ...(options?.apiKey ? { headers: { "X-Calle-Api-Key": options.apiKey } } : {}),
   });
   return normalize(raw);
 }
 
-export async function getResolution(id: string): Promise<Resolution> {
-  if (USE_MOCK) return mockGetResolution(id);
+export async function getResolution(id: string, forceBackend = false): Promise<Resolution> {
+  if (USE_MOCK && !forceBackend) return mockGetResolution(id);
   const raw = await request<RawResolution>(
     `/api/resolutions/${encodeURIComponent(id)}`,
   );
@@ -136,13 +157,20 @@ export async function runResolution(
   options?: {
     case?: CaseId;
     nowUtc?: string;
+    customCase?: CustomCaseInput;
+    executionMode?: ExecutionMode;
+    destination?: string;
+    authorizeDestination?: string;
+    gdprBasisDocumented?: boolean;
+    apiKey?: string;
     onState?: (resolution: Resolution) => void;
   },
 ): Promise<Resolution> {
+  const useBackend = Boolean(options?.customCase) || options?.executionMode === "live" || !USE_MOCK;
   const first = await resolveCase(scenario, options);
   options?.onState?.(first);
 
-  if (USE_MOCK) return first;
+  if (!useBackend) return first;
 
   let current = first;
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt += 1) {
@@ -158,7 +186,7 @@ export async function runResolution(
     if (current.state === "completed") return current;
 
     await wait(POLL_INTERVAL_MS);
-    current = await getResolution(current.id);
+    current = await getResolution(current.id, true);
     options?.onState?.(current);
   }
 

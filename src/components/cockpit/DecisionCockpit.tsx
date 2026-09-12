@@ -5,6 +5,7 @@ import {
   type CaseId,
   type CaseSummary,
   type DemoScenarioId,
+  type ExecutionMode,
   type Resolution,
   type ResolutionState,
 } from "@/types/realityResolver";
@@ -22,6 +23,11 @@ import { ResultPanel } from "./ResultPanel";
 import { VerdictPanel } from "./VerdictPanel";
 import { ResolvingOverlay } from "./ResolvingOverlay";
 import { ErrorState } from "./ErrorState";
+import {
+  CustomCaseEditor,
+  initialCustomDraft,
+  type CustomCaseDraft,
+} from "./CustomCaseEditor";
 
 type Phase = "idle" | "resolving" | "resolved" | "error";
 
@@ -35,6 +41,7 @@ const FALLBACK_CASES: CaseSummary[] = [
 ];
 
 export function DecisionCockpit() {
+  const [cockpitMode, setCockpitMode] = useState<"demo" | "custom">("demo");
   const [scenario, setScenario] = useState<DemoScenarioId>("confirmed");
   const [caseId, setCaseId] = useState<CaseId>("critical-service-escalation");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -42,6 +49,7 @@ export function DecisionCockpit() {
   const [resolution, setResolution] = useState<Resolution | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>(FALLBACK_CASES);
+  const [customDraft, setCustomDraft] = useState<CustomCaseDraft>(initialCustomDraft);
 
   useEffect(() => {
     let active = true;
@@ -68,8 +76,23 @@ export function DecisionCockpit() {
     setError(null);
     setResolution(null);
     try {
-      const next = await runResolution(scenario, {
-        case: caseId,
+      const custom = cockpitMode === "custom" ? customDraft : undefined;
+      const runScenario = custom?.fakeScenario ?? scenario;
+      const next = await runResolution(runScenario, {
+        ...(custom
+          ? {
+              customCase: custom.caseInput,
+              executionMode: custom.executionMode as ExecutionMode,
+              ...(custom.executionMode === "live"
+                ? {
+                    destination: custom.destination,
+                    authorizeDestination: custom.destination,
+                    gdprBasisDocumented: custom.liveAuthorized,
+                    apiKey: custom.apiKey,
+                  }
+                : {}),
+            }
+          : { case: caseId }),
         onState: (nextState) => {
           if (runId !== runIdRef.current) return;
           if (
@@ -94,6 +117,14 @@ export function DecisionCockpit() {
       setError(apiError);
       setPhase("error");
     } finally {
+      if (cockpitMode === "custom" && customDraft.executionMode === "live") {
+        setCustomDraft((current) => ({
+          ...current,
+          apiKey: "",
+          destination: "",
+          liveAuthorized: false,
+        }));
+      }
       if (runId === runIdRef.current) inFlightRef.current = false;
     }
   }
@@ -145,12 +176,40 @@ export function DecisionCockpit() {
           compact={phase === "resolved"}
         />
 
-        <ScenarioSelector
-          value={scenario}
-          onChange={setScenario}
-          onRun={run}
-          running={phase === "resolving"}
-        />
+        <div className="flex gap-2 border-b border-border pb-2">
+          {(["demo", "custom"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={phase === "resolving"}
+              onClick={() => {
+                setCockpitMode(mode);
+                setPhase("idle");
+                setResolution(null);
+                setError(null);
+              }}
+              className={`rounded-sm border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] ${cockpitMode === mode ? "border-action/60 bg-action/15 text-action" : "border-border text-muted-foreground"}`}
+            >
+              {mode === "demo" ? "Demo cases" : "Custom case"}
+            </button>
+          ))}
+        </div>
+
+        {cockpitMode === "demo" ? (
+          <ScenarioSelector
+            value={scenario}
+            onChange={setScenario}
+            onRun={run}
+            running={phase === "resolving"}
+          />
+        ) : (
+          <CustomCaseEditor
+            draft={customDraft}
+            onChange={setCustomDraft}
+            onSubmit={run}
+            running={phase === "resolving"}
+          />
+        )}
 
         {phase === "idle" && <IdleContext caseInfo={activeCase} />}
 
