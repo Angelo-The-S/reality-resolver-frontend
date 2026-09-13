@@ -3,12 +3,15 @@ import {
   type CaseId,
   type CaseInfo,
   type CaseSummary,
+  type Compliance,
   type DemoScenarioId,
   type CustomCaseInput,
   type ExecutionMode,
   type HealthResponse,
+  type RawCompliance,
   type RawResolution,
   type RawCaseCatalogResponse,
+  type Reasoning,
   type Resolution,
   type WireScenarioId,
 } from "@/types/realityResolver";
@@ -68,6 +71,46 @@ function normalizeCase(rawCase: RawResolution["case"]): CaseInfo {
     : { name: rawCase.name, use_case: rawCase.use_case };
 }
 
+function normalizeReasoning(rawReasoning: RawResolution["reasoning"]): Reasoning {
+  if (!rawReasoning) return { rules: [], decision_critical: false };
+  return {
+    decision_critical: rawReasoning.decision_critical,
+    rules: rawReasoning.rules.map((rule, index) => ({
+      id: rule.id ?? rule.rule_name ?? `rule-${index}`,
+      name: rule.name ?? rule.rule_name ?? `Rule ${index + 1}`,
+      triggered: rule.triggered,
+      reason: rule.reason,
+    })),
+  };
+}
+
+function formatComplianceCheckName(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function normalizeCompliance(rawCompliance: RawCompliance | null | undefined): Compliance | null {
+  if (!rawCompliance) return null;
+  return {
+    jurisdiction_chain: rawCompliance.jurisdiction_chain ?? [],
+    checks: (rawCompliance.checks ?? []).map((check, index) => {
+      const id = check.id ?? check.check_name ?? `check-${index}`;
+      const sourceName = check.name ?? check.check_name ?? id;
+      const normalized = {
+        id,
+        name: check.name ?? formatComplianceCheckName(sourceName),
+        passed: check.passed,
+      };
+      const detail = check.detail ?? check.reason;
+      return detail === undefined ? normalized : { ...normalized, detail };
+    }),
+    exempted_for_use_case: rawCompliance.exempted_for_use_case ?? [],
+    allowed: rawCompliance.allowed,
+    next_legal_window: rawCompliance.next_legal_window ?? null,
+  };
+}
+
 /**
  * Shape translation only — no business logic. The engine nests the CALL-E
  * outcome under `call.result`; the panels read `result`.
@@ -81,9 +124,9 @@ function normalize(raw: RawResolution): Resolution {
     mode: raw.mode ?? "",
     case: normalizeCase(raw.case),
     evidence: raw.evidence ?? [],
-    reasoning: raw.reasoning ?? { rules: [], decision_critical: false },
+    reasoning: normalizeReasoning(raw.reasoning),
     call_decision: raw.call_decision ?? "NO_CALL_NEEDED",
-    compliance: raw.compliance ?? null,
+    compliance: normalizeCompliance(raw.compliance),
     call,
     result: raw.result ?? call.result ?? null,
     verdict: raw.verdict ?? null,

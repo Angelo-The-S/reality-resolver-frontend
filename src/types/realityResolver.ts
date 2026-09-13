@@ -64,6 +64,19 @@ export interface Reasoning {
   decision_critical: boolean;
 }
 
+export interface RawReasoningRule {
+  id?: string;
+  name?: string;
+  rule_name?: string;
+  triggered: boolean;
+  reason: string;
+}
+
+export interface RawReasoning {
+  rules: RawReasoningRule[];
+  decision_critical: boolean;
+}
+
 export type CallDecision = "CALL_JUSTIFIED" | "NO_CALL_NEEDED";
 
 export interface ComplianceCheckData {
@@ -71,6 +84,24 @@ export interface ComplianceCheckData {
   name: string;
   passed: boolean;
   detail?: string;
+}
+
+export interface RawComplianceCheck {
+  id?: string;
+  name?: string;
+  check_name?: string;
+  passed: boolean;
+  detail?: string;
+  reason?: string;
+  confidence?: string;
+}
+
+export interface RawCompliance {
+  jurisdiction_chain: string[];
+  checks: RawComplianceCheck[];
+  exempted_for_use_case: string[];
+  allowed: boolean;
+  next_legal_window: string | null;
 }
 
 export interface Compliance {
@@ -129,9 +160,9 @@ export interface RawResolution {
   mode?: string;
   case?: (CaseInfo & { decision_options?: unknown }) | null;
   evidence?: EvidenceItemData[] | null;
-  reasoning?: Reasoning | null;
+  reasoning?: RawReasoning | null;
   call_decision?: CallDecision | null;
-  compliance?: Compliance | null;
+  compliance?: RawCompliance | null;
   call?: CallInfo | null;
   result?: ResolutionResult | null;
   verdict?: Verdict | null;

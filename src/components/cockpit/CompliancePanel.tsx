@@ -71,6 +71,7 @@ export function CompliancePanel({ compliance }: { compliance: Compliance | null 
             key={check.id}
             check={check}
             exempted={compliance.exempted_for_use_case.includes(check.id)}
+            allowed={allowed}
           />
         ))}
       </ul>
